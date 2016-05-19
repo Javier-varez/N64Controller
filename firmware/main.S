@@ -14,15 +14,14 @@ main:         // Configure oscillator
               // Configure timer
               ldi   r17,                          0x00
               out   _SFR_IO_ADDR(TCNT0),          r17
-              ldi   r17,                          _BV(COM0A0)
-              ori   r17,                          _BV(WGM01)
+              ldi   r17,                          _BV(WGM01)
               out   _SFR_IO_ADDR(TCCR0A),         r17
               ldi   r17,                          _BV(CS02) //Prescaler at 256
               out   _SFR_IO_ADDR(TCCR0B),         r17
               ldi   r17,                          0xFF
               out   _SFR_IO_ADDR(OCR0A),          r17
               ldi   r17,                          _BV(OCIE0A)
-              out   _SFR_IO_ADDR(TIMSK0),          r17
+              out   _SFR_IO_ADDR(TIMSK0),         r17
 
               // Configure I2C Slave
               ldi   r17,                          0x54  // Dev addr = 0x54
@@ -33,21 +32,58 @@ main:         // Configure oscillator
               ori   r17,                          _BV(TWDIE) // Data interrupt enable
               sts   TWSCRA,                       r17
 
-
-
               // Configure ports
-              ldi   r16,                          0x04
-              ldi   r17,                          0x00
+              ldi   r16,                          0x0C
+              ldi   r17,                          0x08
               out   _SFR_IO_ADDR(DDRA),           r16
               out   _SFR_IO_ADDR(PORTA),          r16
               ldi   r18,                          _BV(PB2)
               out   _SFR_IO_ADDR(DDRB),           r18
-              sei // enable interrupts
+              sei   // enable interrupts
 
 loop:         rjmp  loop
 
+isPresentN64: ldi    r26,                         0x00 // X indirect addressing
+              ldi    r27,                         0x01
+              ldi    r20,                         0x18 //24 bits to read
+              rcall  zero
+              rcall  zero
+              rcall  zero
+              rcall  zero
+              rcall  zero
+              rcall  zero
+              rcall  zero
+              rcall  zero
+              rcall  one
+              // Set Port A as inputs, and start reading
+              out    _SFR_IO_ADDR(DDRA),           r17
 
-readN64:      ldi    r26,                         0x00
+readP:        // 15 Cycle delay
+              ldi   r18,                           0x05
+readPDelay1:  dec   r18
+              brne  readPDelay1
+              // Read Value and store on X reg
+              in    r19,                           _SFR_IO_ADDR(PINA)
+              st    X+,                            r19
+              // 11 cycle delay
+              ldi   r18,                           0x03
+readPDelay2:  dec   r18
+              brne  readPDelay2
+              nop
+              nop
+              dec   r20
+              brne  readP
+              // Exiting read
+              // 24 cycle delay
+              ldi   r18,                           0x08
+readPDelay3:  dec   r18
+              brne  readPDelay3
+              // Port as output again
+              out    _SFR_IO_ADDR(DDRA),           r16
+              //return
+              ret
+
+readN64:      ldi    r26,                         0x18
               ldi    r27,                         0x01
               ldi    r20,                         0x20 //32 bits to read
               rcall  zero
@@ -93,32 +129,36 @@ readDelay3:   dec   r18
 
 
 
-
-
-
 zero:         // OFF
-              out   _SFR_IO_ADDR(PORTA),           r17
-              // 23 Cycles Delay
-              ldi   r18,                           0x07
+              in    r18,                            _SFR_IO_ADDR(PINA)
+              andi  r18,                            0xFB
+              out   _SFR_IO_ADDR(PORTA),           r18
+              // 19 Cycles Delay
+              ldi   r18,                           0x06
 zeroloop:     dec   r18
               brne  zeroloop
-              rjmp  zeroON // 2 cycle nop, 16 bit instruction as well
+              nop
               // ON
-zeroON:       out   _SFR_IO_ADDR(PORTA),           r16
+zeroON:       in    r18,                            _SFR_IO_ADDR(PINA)
+              ori   r18,                            0x04
+              out   _SFR_IO_ADDR(PORTA),           r18
               ret
 
 
 
 
 one:          // OFF
-              out   _SFR_IO_ADDR(PORTA),           r17
-              // 7 cycles delay
-              ldi   r18,                           0x02
-sevCycLoop:   dec   r18
-              brne  sevCycLoop
+              in    r18,                            _SFR_IO_ADDR(PINA)
+              andi  r18,                            0xFB
+              out   _SFR_IO_ADDR(PORTA),           r18
+              // 3-cycle delay
+              nop
+              nop
               nop
               // ON
-oneON:        out   _SFR_IO_ADDR(PORTA),           r16
+              in    r18,                            _SFR_IO_ADDR(PINA)
+              ori   r18,                            0x04
+oneON:        out   _SFR_IO_ADDR(PORTA),           r18
               // 12 cycle delay
               ldi   r18,                           0x03
 oneloop:      dec   r18
@@ -136,15 +176,40 @@ oneexit:      ret
 TIMER0_COMPA_vect:  in  r31,  _SFR_IO_ADDR(SREG)
                     cli
 
-                    rcall readN64
+                    rcall isPresentN64
 
-                    lds r18,                  0x0100
-                    out _SFR_IO_ADDR(PORTB),  r18
+                    lds r18,                  0x0107
+                    andi r18,                 0x04
+                    breq NotPresent
+                    lds r18,                  0x0105
+                    andi r18,                 0x04
+                    breq NotPresent
 
+                    rjmp  Present
 
-                    out _SFR_IO_ADDR(SREG), r31
+exitIT:             out _SFR_IO_ADDR(SREG), r31
                     reti
 
+Present:            ldi   r18,                0xFF
+waitBeforeRead:     dec   r18
+                    brne  waitBeforeRead
+
+                    ldi r18,                  0x0C
+                    out _SFR_IO_ADDR(PORTA),  r18
+
+                    rcall readN64
+
+                    lds r18,                  0x0118
+                    out _SFR_IO_ADDR(PORTB),  r18
+
+                    rjmp exitIT
+
+
+
+NotPresent:         ldi r18,                  0x04
+                    out _SFR_IO_ADDR(PORTA),  r18
+
+                    rjmp exitIT
 
 .global TWI_SLAVE_vect
 
@@ -153,7 +218,7 @@ TWI_SLAVE_vect:     in  r31,  _SFR_IO_ADDR(SREG)
 
                     lds  r18,                  TWSSRA
                     andi r18,                 _BV(TWDIF)
-                    cpi r18,                  _BV(TWDIF)
+                    cpi  r18,                 _BV(TWDIF)
                     breq  TWI_SLAVE_data
 
                     lds  r18,                  TWSSRA
@@ -165,7 +230,7 @@ TWI_SLAVE_vect:     in  r31,  _SFR_IO_ADDR(SREG)
                     reti
 
 
-TWI_SLAVE_data: ld  r18,                  Y+//0x0100
+TWI_SLAVE_data: ld  r18,                  Y+
                 sts TWSD,                 r18
 
                 ldi r18,      _BV(TWDIF) // Clear Flag
@@ -177,8 +242,8 @@ TWI_SLAVE_data: ld  r18,                  Y+//0x0100
 
 
 
-TWI_SLAVE_addr: ldi r28, 0x00
-                ldi r29, 0x01 ; Set reg Y to 0x0100
+TWI_SLAVE_addr: ldi r28, 0x18
+                ldi r29, 0x01 ; Set reg Y to 0x0118
 
                 ldi r18,      _BV(TWASIF) // Clear Flag
                 sts TWSSRA, r18
