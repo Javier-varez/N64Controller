@@ -165,7 +165,7 @@ TWI_SLAVE_vect:     in  r31,  _SFR_IO_ADDR(SREG)
                     reti
 
 
-TWI_SLAVE_data: ld  r18,                  X+//0x0100
+TWI_SLAVE_data: ld  r18,                  Y+//0x0100
                 sts TWSD,                 r18
 
                 ldi r18,      _BV(TWDIF) // Clear Flag
@@ -177,8 +177,8 @@ TWI_SLAVE_data: ld  r18,                  X+//0x0100
 
 
 
-TWI_SLAVE_addr: ldi r26, 0x00
-                ldi r27, 0x01 ; Set reg X to 0x0100
+TWI_SLAVE_addr: ldi r28, 0x00
+                ldi r29, 0x01 ; Set reg Y to 0x0100
 
                 ldi r18,      _BV(TWASIF) // Clear Flag
                 sts TWSSRA, r18
