@@ -1,5 +1,5 @@
 ## N64 Controller Interface
 
-The attiny841 serves as a serial interface to the N64 controller, replacing it's native onewire custom comunication protocol.
+Firmware for an `attiny841` that adapts the custom onewire comunication protocol and tranlates it into an i2c slave.
 
-It runs at 8MHz, and it is completely written in assembly, as it needs to speed up GPIO operations.
+It runs at 8MHz, and it is completely written in assembly, because it needs deterministic timing at 1MHz.
