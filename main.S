@@ -1,60 +1,74 @@
 
 #include <avr/io.h>
 
+// Program entrypoint
 .global main
-
-main:         // Configure oscillator
-              // CLKPR = 1
+main:         // Configure oscillator at 8 MHz
               cli
               ldi   r17,                          0xD8
-              ldi   r16,                          0x01
               sts   CCP,                          r17
-              sts   CLKPR,                        r16
+              ldi   r17,                          0x01
+              sts   CLKPR,                        r17
 
-              // Configure timer
+              // Configure timer to approximately 1 ms scans
+              // The timer will trigger the N64 controller readout
+              // 1. Reset timer to 0
+              // 2. Set CTC mode
+              // 3. Set prescaler to 256
+              // 4. Set output compare register to 255
+              // 5. Interrupt on match (overflow)
               ldi   r17,                          0x00
               out   _SFR_IO_ADDR(TCNT0),          r17
               ldi   r17,                          _BV(WGM01)
               out   _SFR_IO_ADDR(TCCR0A),         r17
-              ldi   r17,                          _BV(CS02) //Prescaler at 256
+              ldi   r17,                          _BV(CS02)
               out   _SFR_IO_ADDR(TCCR0B),         r17
               ldi   r17,                          0xFF
               out   _SFR_IO_ADDR(OCR0A),          r17
               ldi   r17,                          _BV(OCIE0A)
               out   _SFR_IO_ADDR(TIMSK0),         r17
 
-              // Configure I2C Slave
-              ldi   r17,                          0x54  // Dev addr = 0x54
+              // Configure I2C Slave with slave address = 0x54
+              // We get interrupts on DATA and ADDR match
+              ldi   r17,                          0x54
               sts   TWSA,                         r17
 
-              ldi   r17,                          _BV(TWEN) // Enable I2C
-              ori   r17,                          _BV(TWASIE) // ADDR interrupt enable
-              ori   r17,                          _BV(TWDIE) // Data interrupt enable
+              ldi   r17,                          _BV(TWEN)
+              ori   r17,                          _BV(TWASIE)
+              ori   r17,                          _BV(TWDIE)
               sts   TWSCRA,                       r17
 
-              // Configure ports
+              // Configure ports and enable interrupts when done
+              // r16 and r17 are reserved during the operation of the program
+              // They should not be modified by any other code
+              // r16 contains the port configuration as output, r17 is used
+              // for input
               ldi   r16,                          0x0C
               ldi   r17,                          0x08
               out   _SFR_IO_ADDR(DDRA),           r16
               out   _SFR_IO_ADDR(PORTA),          r16
               ldi   r18,                          _BV(PB2)
               out   _SFR_IO_ADDR(DDRB),           r18
-              sei   // enable interrupts
+              sei
 
-loop:         rjmp  loop
+// All processing is done in the interrupt service routine,
+// so this loop is a busy wait.
+// This is because the timing requirements for the
+MainLoop:         rjmp  MainLoop
 
-isPresentN64: ldi    r26,                         0x00 // X indirect addressing
+// This is a routine that checks if the N64 controller is present.
+IsN64Present: ldi    r26,                         0x00 // X indirect addressing
               ldi    r27,                         0x01
               ldi    r20,                         0x18 //24 bits to read
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  one
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  One
               // Set Port A as inputs, and start reading
               out    _SFR_IO_ADDR(DDRA),           r17
 
@@ -83,25 +97,28 @@ readPDelay3:  dec   r18
               //return
               ret
 
+// Reads 32 bits from the N64 controller
 readN64:      ldi    r26,                         0x18
               ldi    r27,                         0x01
               ldi    r20,                         0x20 //32 bits to read
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  zero
-              rcall  one
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  Zero
+              rcall  One
               nop
               nop
               nop
               nop
-              rcall  one
+              rcall  One
               // Set Port A as inputs, and start reading
               out    _SFR_IO_ADDR(DDRA),           r17
 
+// The actual read of the 32 bytes. Here timing is also critical, shift the clock phase so that we
+// read while the signal is stable
 read:         // 15 Cycle delay
               ldi   r18,                           0x05
 readDelay1:   dec   r18
@@ -122,32 +139,27 @@ readDelay2:   dec   r18
               ldi   r18,                           0x08
 readDelay3:   dec   r18
               brne  readDelay3
-              // Port as output again
+              // Set the pin as output again
               out    _SFR_IO_ADDR(DDRA),           r16
-              //return
               ret
 
-
-
-zero:         // OFF
+// Sends a zero through the onewire interface. Timing is carefully calculated to take 1us
+Zero:         // OFF
               in    r18,                            _SFR_IO_ADDR(PINA)
               andi  r18,                            0xFB
               out   _SFR_IO_ADDR(PORTA),           r18
               // 19 Cycles Delay
               ldi   r18,                           0x06
-zeroloop:     dec   r18
-              brne  zeroloop
+ZeroWait:     dec   r18
+              brne  ZeroWait
               nop
-              // ON
-zeroON:       in    r18,                            _SFR_IO_ADDR(PINA)
+              in    r18,                            _SFR_IO_ADDR(PINA)
               ori   r18,                            0x04
               out   _SFR_IO_ADDR(PORTA),           r18
               ret
 
-
-
-
-one:          // OFF
+// Sends a one through the onewire interface. Timing is carefully calculated to take 1us
+One:          // OFF
               in    r18,                            _SFR_IO_ADDR(PINA)
               andi  r18,                            0xFB
               out   _SFR_IO_ADDR(PORTA),           r18
@@ -158,41 +170,44 @@ one:          // OFF
               // ON
               in    r18,                            _SFR_IO_ADDR(PINA)
               ori   r18,                            0x04
-oneON:        out   _SFR_IO_ADDR(PORTA),           r18
-              // 12 cycle delay
+              out   _SFR_IO_ADDR(PORTA),           r18
+              // 12-cycle delay
               ldi   r18,                           0x03
-oneloop:      dec   r18
-              breq  oneexit
-              rjmp  oneloop
-oneexit:      ret
+OneWait:      dec   r18
+              breq  ExitOne
+              rjmp  OneWait
+ExitOne:      ret
 
 
 
 // Interrupts
 
-
+// Timer ISR. Checks if the controller is connected and then
+// triggers a read if it is.
 .global TIMER0_COMPA_vect
 
 TIMER0_COMPA_vect:  in  r31,  _SFR_IO_ADDR(SREG)
                     cli
 
-                    rcall isPresentN64
+                    rcall IsN64Present
 
                     lds r18,                  0x0107
                     andi r18,                 0x04
-                    breq NotPresent
+                    breq N64NotPresent
                     lds r18,                  0x0105
                     andi r18,                 0x04
-                    breq NotPresent
+                    breq N64NotPresent
 
-                    rjmp  Present
+                    rjmp  N64Present
 
-exitIT:             out _SFR_IO_ADDR(SREG), r31
+ExitTimerISR:       out _SFR_IO_ADDR(SREG), r31
                     reti
 
-Present:            ldi   r18,                0xFF
-waitBeforeRead:     dec   r18
-                    brne  waitBeforeRead
+N64Present:         ldi   r18,                0xFF
+// Wait for a bit before triggering the read, otherwise the controller doesn't
+// respond.
+WaitBeforeRead:     dec   r18
+                    brne  WaitBeforeRead
 
                     ldi r18,                  0x0C
                     out _SFR_IO_ADDR(PORTA),  r18
@@ -202,15 +217,15 @@ waitBeforeRead:     dec   r18
                     lds r18,                  0x0118
                     out _SFR_IO_ADDR(PORTB),  r18
 
-                    rjmp exitIT
+                    rjmp ExitTimerISR
 
-
-
-NotPresent:         ldi r18,                  0x04
+// If it is not present, we can leave the interrupt
+N64NotPresent:      ldi r18,                  0x04
                     out _SFR_IO_ADDR(PORTA),  r18
 
-                    rjmp exitIT
+                    rjmp ExitTimerISR
 
+// I2C ISR vector
 .global TWI_SLAVE_vect
 
 TWI_SLAVE_vect:     in  r31,  _SFR_IO_ADDR(SREG)
@@ -230,6 +245,8 @@ TWI_SLAVE_vect:     in  r31,  _SFR_IO_ADDR(SREG)
                     reti
 
 
+// Handles an I2C data IRQ and prepares the I2C peripheral to send the next I2C
+// register
 TWI_SLAVE_data: ld  r18,                  Y+
                 sts TWSD,                 r18
 
@@ -239,9 +256,8 @@ TWI_SLAVE_data: ld  r18,                  Y+
                 out _SFR_IO_ADDR(SREG), r31
                 reti
 
-
-
-
+// Handles an I2C address IRQ and sets the
+// register
 TWI_SLAVE_addr: ldi r28, 0x18
                 ldi r29, 0x01 ; Set reg Y to 0x0118
 

@@ -1,10 +1,4 @@
-# Name: Makefile
-# Author: <insert your name here>
-# Copyright: <insert your copyright message here>
-# License: <insert your license reference here>
-
-# This is a prototype Makefile. Modify it according to your needs.
-# You should at least check the settings for
+# Minimum set of settings:
 # DEVICE ....... The AVR device you compile for
 # CLOCK ........ Target AVR clock rate in Hertz
 # OBJECTS ...... The object files created from your source files. This list is
@@ -19,7 +13,7 @@
 
 DEVICE     = attiny841
 CLOCK      = 16000000
-PROGRAMMER = -c usbtiny #-c stk500v2 -P avrdoper
+PROGRAMMER = -c usbtiny
 OBJECTS    = main.o
 FUSES      = -U hfuse:w:0xDF:m -U lfuse:w:0x6F:m
 
@@ -50,8 +44,7 @@ FUSES      = -U hfuse:w:0xDF:m -U lfuse:w:0x6F:m
 AVRDUDE = avrdude $(PROGRAMMER) -p $(DEVICE)
 COMPILE = avr-gcc -Wall -Os -DF_CPU=$(CLOCK) -mmcu=$(DEVICE)
 
-# symbolic targets:
-all:	main.hex
+all: main.hex
 
 .c.o:
 	$(COMPILE) -c $< -o $@
@@ -66,18 +59,13 @@ all:	main.hex
 .c.s:
 	$(COMPILE) -S $< -o $@
 
-flash:	all
+flash: all
 	$(AVRDUDE) -U flash:w:main.hex:i
 
 fuse:
 	$(AVRDUDE) $(FUSES)
 
-# Xcode uses the Makefile targets "", "clean" and "install"
 install: flash fuse
-
-# if you use a bootloader, change the command below appropriately:
-load: all
-	bootloadHID main.hex
 
 clean:
 	rm -f main.hex main.elf $(OBJECTS)
@@ -94,7 +82,7 @@ main.hex: main.elf
 # EEPROM and add it to the "flash" target.
 
 # Targets for code debugging and analysis:
-disasm:	main.elf
+disasm: main.elf
 	avr-objdump -d main.elf
 
 cpp:
